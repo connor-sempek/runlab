@@ -1,0 +1,387 @@
+// imports
+import * as d3 from "https://cdn.skypack.dev/d3@7";
+
+// config parameters
+var SVG_HEIGHT = 200    // height of svg containing interactive split time vis
+SVG_WIDTH = 600     // width of svg containing interactive split time vis
+PAD_TOP = 20        // padding between top of SVG border and top of vis,
+                    // should be >= CIRCLE_RADIUS to prevent circle from getting cut off 
+PAD_BOTTOM = 40     // padding between bottom of SVG border and bottom of vis, 
+                    // should be >= CIRCLE_RADIUS to prevent circle from getting cut off
+PAD_LEFT = 25
+PAD_RIGHT = 25
+
+// vis boundaries in svg pixel coordinates
+VIS_START_X = PAD_LEFT
+VIS_END_X = SVG_WIDTH - PAD_RIGHT
+VIS_SPAN_X = VIS_END_X - VIS_START_X
+VIS_START_Y = PAD_TOP
+VIS_END_Y = SVG_HEIGHT - PAD_BOTTOM
+VIS_SPAN_Y = VIS_END_Y - VIS_START_Y
+
+// vis boundaries in miles (x) by minutes (y) coordinates
+MIN_SPLIT = 5       // minimum split time allowed, in units minutes
+MAX_SPLIT = 9       // maximum split time allowed, in units minutes
+SPLIT_SPAN = MAX_SPLIT - MIN_SPLIT 
+NUM_MILES = 13.1    // run type distance
+
+CIRCLE_RADIUS = 12  // radius of draggable circles
+
+TOTAL_TIME_ID = "totalTime"
+AVG_PACE_ID = "avgPace"
+
+// general helper functions
+function arraySum(arr) {
+  return arr.reduce((a, b) => a + b, 0);  
+};
+
+// pad single digits with a single leading 0 for time display purposes
+// Examples:
+//  padDigit(10) -> "10"
+//  padDigit(1) -> "01"
+function padNum(d) {
+  return d < 10 ? "0" + String(parseInt(d)) : String(parseInt(d));
+};
+
+// return the fractional part of a number
+// Examples:
+//  fractionalPart(1) = 0
+//  fractionalPart(1.2) = 0.2
+//  fractionalPart(1.3) = 0.2999999998
+function fractionalPart(num) {
+  return 1.0 * (num - Math.floor(num));
+};
+
+// fetch the numMiles value of the current run type dropdown selection
+function getNumMiles() {
+  return parseFloat(document.querySelector("select").value);
+}
+
+// Time math and string formatting functions
+function getHours(minutes) {
+  return 1.0 * Math.floor(minutes / 60.0);
+};
+
+// return the fractional part of a number in units minutes as a number in units seconds
+// Examples:
+//  getSeconds(3.5) -> 30
+//  getSeconds(100.2) -> 12
+//  getSeconds(45) -> 0
+function getSeconds(minutes) {
+  return 60.0 * fractionalPart(minutes);
+};
+
+// return the whole minutes of a number in units minutes, can also specify if the whole
+// hours components should be removed prior to computing minutes component using `keepHours=false``
+// Examples:
+//  getMinutes(14.9) = 14
+//  getMinutes(14.9, keepHours=true) = 14
+//  getMinutes(122.35) = 122
+//  getMinutes(122.35, keepHours=true) = 2
+function getMinutes(minutes, keepHours=true) {
+  return keepHours ? 1.0 * Math.floor(minutes) : Math.floor(minutes) - 60.0 * getHours(minutes);
+};
+
+// return a string showing time displayed as HH:MM:SS if `displayHours=true`, otherwise MM:SS.
+// use `pad*` args to control whether single digit numbers get zero padded (e.g. 2 -> 02)
+function displayTime(minutes, displayHours=false, padSeconds=true, padMinutes=true, padHours=true) {
+  secs = getSeconds(minutes)
+  displaySecs = padSeconds ? padNum(secs) : String(parseInt(secs))
+  if (displayHours == true) {
+    mins = getMinutes(minutes, keepHours=false)
+    displayMins = padMinutes ? padNum(mins) : String(parseInt(mins))
+
+    hrs = getHours(minutes)
+    displayHrs = padHours ? padNum(hrs) : String(parseInt(hrs))
+
+    timeString = displayHrs + ":" + displayMins + ":" + displaySecs
+  } else {
+    mins = getMinutes(minutes, keepHours=true)
+    displayMins = padMinutes ? padNum(mins) : String(parseInt(mins))
+
+    timeString = displayMins + ":" + displaySecs
+  }
+  return timeString;
+};
+
+// // compute split time from y value
+// function minutesToTime(m) {
+//   splitMins = Math.floor(m)
+//   splitSecs = Math.round((m - splitMins) * 60)  
+//   return String(splitMins) + ":" + (splitSecs < 10 ? "0" : "") + String(splitSecs);
+// }
+// convert a string representing time in the format (HH:)?MM:SS to a floating point number in units minutes
+// Examples:
+//  displayTimeToMinutes("01:30:30") -> 90.5
+function displayTimeToMinutes(timeString) {
+  timeComponents = timeString.split(":")
+  secs = parseInt(timeComponents.slice(-1))
+  mins = parseInt(timeComponents.slice(-2))
+  hrs = timeComponents.length == 3 ? parseInt(timeComponents[0]) : 0
+  return (hrs * 60.0) + (1.0 * mins) + (secs / 60.0); 
+};
+
+// compute minutes value from y position in svg
+function yToMinutes(y) {
+  return MIN_SPLIT + (SPLIT_SPAN) * (y - PAD_TOP) / VIS_SPAN_Y;
+};
+
+function minutesToY(minutes) {
+  return VIS_SPAN_Y * (minutes - MIN_SPLIT) / (SPLIT_SPAN) + PAD_TOP
+};
+
+// return convert a y position value to a string for displaying split time formatted as "MM:SS"
+function yToSplitTime(y) {
+  return displayTime(yToMinutes(y), displayHours=false, padSeconds=true, padMinutes=false);
+};
+
+function getTotalTime(numMiles) {
+  var text = document.querySelectorAll(".splitTime")
+  var currSplits = Array.from(text).map(t => displayTimeToMinutes(t.innerHTML))
+  if (fractionalPart(numMiles) == 0) {
+    total = 1.0 * arraySum(currSplits)
+  } else {
+    total = 1.0 * arraySum(currSplits.slice(0, -1)) + fractionalPart(numMiles) * currSplits.slice(-1)
+  }
+  return total;
+};
+
+function displayTotalTime(numMiles) {
+  return displayTime(getTotalTime(numMiles), displayHours=true);
+};
+
+function updateTotalTime(numMiles) {
+  var p = document.getElementById(TOTAL_TIME_ID)
+  p.innerHTML = displayTotalTime(numMiles);
+};
+
+// get average pace across entirety of run
+function getAvgPace(numMiles) {
+  return getTotalTime(numMiles) / (1.0 * numMiles)
+};
+
+// return the average pace as a string formatted like "MM:SS"
+function displayAvgPace(numMiles) {
+  return displayTime(getAvgPace(numMiles), displayHours=false, padSeconds=true, padMinutes=true);
+};
+
+// update the average pace displayed on page
+function updateAvgPace(numMiles) {
+  var p = document.getElementById(AVG_PACE_ID)
+  p.innerHTML = displayAvgPace(numMiles);
+};
+
+// add horizontal line marking avg pace
+function addAvgPaceLine(g, numMiles) {
+  g
+    .append("line")
+    .attr("x1", 0)
+    .attr("y1", minutesToY(getAvgPace(numMiles)))
+    .attr("x2", SVG_WIDTH)
+    .attr("y2", minutesToY(getAvgPace(numMiles)))
+    .attr("id", "avgPaceLine");
+};
+
+// add text on avg pace line showing avg pace
+function addAvgPaceLineText(g, numMiles) {
+  g
+    .append("text")
+    .attr("x", SVG_WIDTH)
+    .attr("y", minutesToY(getAvgPace(numMiles)))
+    .attr("dx", -20)
+    .attr("dy", -2)
+    .text(displayAvgPace(numMiles))
+    .attr("id", "avgPaceLineText");
+};
+
+function addAvgPaceLineRect(g, numMiles) {
+  g
+    .append("rect")
+    .attr("x", SVG_WIDTH - 32)
+    .attr("y", minutesToY(getAvgPace(numMiles)) - 90)
+    .attr("width", 25)
+    .attr("height", 15)
+    .attr("id", "avgPaceLineRect");
+}
+
+function updateSummary(numMiles) {
+  updateAvgPace(numMiles);
+  updateTotalTime(numMiles);
+};
+
+DRAGSTART_CIRCLE_STROKE = "#686de0"
+// drag functionality
+function dragstarted(event, d) {
+  // on click of draggable object, add a stroke
+  d3.select(this).raise().attr("stroke", DRAGSTART_CIRCLE_STROKE)
+};
+
+function dragged(event, d) {
+
+  // update y position of circle being dragged to match the y position of cursor
+  d3.select(this).attr("cy", d.y = Math.max(VIS_START_Y, Math.min(event.y, VIS_END_Y)));
+  
+  // update split time displayed in circle to time value mapped from y position of cursor
+  d3.select("#" + d.id)
+    .attr("y", d.y = Math.max(VIS_START_Y, Math.min(event.y, VIS_END_Y)))
+    .text(yToSplitTime(Math.max(VIS_START_Y, Math.min(event.y, VIS_END_Y))));
+  
+  // update summary info (e.g. total time and avg. pace)
+  updateSummary(getNumMiles())
+
+  // update average pace reference line
+  d3.select("#avgPaceLine")
+    .attr("y1", minutesToY(getAvgPace(getNumMiles())))
+    .attr("y2", minutesToY(getAvgPace(getNumMiles())));
+  
+  d3.select("#avgPaceLineText")
+    .attr("y", minutesToY(getAvgPace(getNumMiles())))
+    .text(displayAvgPace(getNumMiles()));
+
+  d3.select("#avgPaceLineRect")
+    .attr("y", minutesToY(getAvgPace(getNumMiles())))
+};
+
+function dragended(event, d) {
+  d3.select(this).attr("stroke", null);
+};  
+
+function mileLabel(mileNum, numMiles) {
+  if (mileNum == Math.ceil(numMiles)) {
+    label = String(numMiles) + " mi"
+  } else {
+    label = String(mileNum) + " mi"
+  }
+  return label;
+};
+
+// construct data points based on number of miles for specified run type
+function buildData(numMiles) {
+  var data = []
+  for (let i = 0; i < Math.ceil(numMiles); i++) {
+    data.push({
+        "x": (i + 1) * (SVG_WIDTH - (5 * CIRCLE_RADIUS)) / (1.0 * Math.ceil(numMiles)), 
+        "y": VIS_START_Y + (VIS_SPAN_Y / 2.0), // default each split value to midpoint of min and max split 
+        "mileNum": i + 1,
+        "id": "mile" + String((i + 1)),
+        "mileLabel": mileLabel(i + 1, numMiles),
+        "isLastMile": i == Math.ceil(numMiles) - 1 
+    })
+  }
+  return data;
+};
+
+// add horizontal lines at minute intervals
+function addHorizontalReferenceLines(g) {
+  for (let i = MIN_SPLIT; i <= MAX_SPLIT; i++) {
+    g
+      .append("line")
+      .attr("x1", 0)
+      .attr("y1", minutesToY(i))
+      .attr("x2", SVG_WIDTH)
+      .attr("y2", minutesToY(i))
+      .style("stroke-width", 1)
+      .style("stroke", "#353b48");
+
+    g
+      .append("text")
+      .attr("x", 0)
+      .attr("y", minutesToY(i))
+      .attr("dy", -3)
+      .attr("dx", 8)
+      .attr("class", "refLine")
+      .text(String(i) + " min");
+  }
+};
+
+// Add vertical guide lines
+function addVerticalReferenceLines(g, data) {
+  g
+    .selectAll("lines")
+    .data(data)
+    .join("line")
+      .attr("x1", function(d) { return d.x - CIRCLE_RADIUS - 8})                       
+      .attr("y1", VIS_START_Y - CIRCLE_RADIUS)
+      .attr("x2", function(d) { return d.x - CIRCLE_RADIUS - 8})                       
+      .attr("y2", VIS_END_Y + 2*CIRCLE_RADIUS)
+      .attr("class", "verticalReferenceLine")
+};
+
+// add circles representing the split time for that mile
+function addSplitTimeCircles(g, data) {
+  g
+    .selectAll("circles")
+    .data(data)
+    .join("circle")
+      .attr("cx", function(d) { return d.x })
+      .attr("cy", function(d) { return d.y })
+      .attr("r", CIRCLE_RADIUS)
+      .attr("class", function(d) { return d.isLastMile ? "lastMile" : "mile" })
+      .call(
+        d3.drag()
+        .on("start", dragstarted)
+        .on("drag", dragged)
+        .on("end", dragended)
+      );
+};
+
+// add text displaying split time for that mile
+function addSplitTimeText(svg, data) {
+  svg
+    .selectAll("text.splitTime")
+    .data(data)
+    .join("text")
+      .attr("x", function(d) { return d.x })
+      .attr("y", function(d) { return d.y })
+      .attr("dy", ".3em")
+      .attr("class", "splitTime")
+      .attr("id", function (d) { return "mile" + d.mileNum })
+      .text(function(d) { return yToSplitTime(d.y) });
+}
+
+// add text displaying split time for that mile
+function addMileLabels(g, data) {
+  g
+    .selectAll("text.mileLabel")
+    .data(data)
+    .join("text")
+      .attr("x", function(d) { return d.x })
+      .attr("y", VIS_END_Y + CIRCLE_RADIUS)
+      .attr("dy", ".3em")
+      .attr("class", "mileLabel")
+      .text(function(d) { return d.mileLabel });
+  };
+
+function doItAll(svg, numMiles) {
+
+  const g = d3.select("svg").append("g")
+  data = buildData(numMiles)
+  addHorizontalReferenceLines(g)
+  addVerticalReferenceLines(g, data)
+  addSplitTimeText(svg, data)
+  addAvgPaceLine(g, numMiles)
+  addAvgPaceLineRect(g, numMiles)
+  addAvgPaceLineText(g, numMiles)
+  addSplitTimeCircles(g, data)
+  addMileLabels(g, data)
+
+  updateSummary(numMiles)
+};
+
+console.log("created svg")
+
+// main script
+const svg = d3.select("body")
+    .append("svg")
+    .attr("viewBox", [0, 0, SVG_WIDTH, SVG_HEIGHT + 2 * CIRCLE_RADIUS])
+console.log("created svg")
+
+// initialize all components based on default setting for page load
+doItAll(svg, getNumMiles())
+
+// update components based on user configurable parameters
+runTypeDropdown = document.querySelector("select")
+runTypeDropdown.addEventListener("change", function() {
+  svg.selectAll("*").remove();
+  doItAll(svg, getNumMiles());
+});

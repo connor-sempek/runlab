@@ -1,0 +1,102 @@
+body {
+  margin-top: 5px;
+  margin-left: 10px;
+  margin-right: 10px;
+}
+
+h1, p, div {
+  font-family: Helvetica, sans-serif;
+}
+
+div#summary {
+  display: flex;
+  font-family: Helvetica, sans-serif;
+  font-size: 24;
+}
+
+  p#totalTime {
+    font-weight: 700;
+    color: #4834d4;
+  }
+
+  p#avgPace {
+    font-weight: 700;
+    color: #ff6348;
+  }
+
+  select {
+    height: 24;
+    text-align: center;
+    vertical-align: middle;
+    margin-top: 28;
+  }
+
+text {
+  font-family: Helvetica, sans-serif;
+  font-size: 8;
+  text-anchor: middle;
+  fill: white;
+}
+
+text.mileLabel {
+  font-family: Helvetica, sans-serif;
+  font-size: 8;
+  text-anchor: middle;
+  fill: black;
+  font-style: italic;
+  font-weight: 700;
+}
+
+text.refLine {
+  font-family: Helvetica, sans-serif;
+  font-size: 6;
+  font-style: italic;
+  fill: #353b48;
+}
+
+line.verticalReferenceLine {
+  opacity:  0.1;
+  stroke: black;
+}
+
+#avgPaceLine {
+  stroke-width:  1;
+  stroke: #ff6348;
+  stroke-dasharray: 2,1;
+}
+
+#avgPaceLine:hover {
+  stroke-width:  2;
+  cursor: hand;
+}
+
+#avgPaceLineText {
+  font-family: Helvetica, sans-serif;
+  font-size: 8;
+  font-style: italic;
+  font-weight: 700;
+  fill: #ff6348;
+}
+
+#avgPaceLineRect {
+  fill: white;
+  stroke: none;
+  /*stroke-dasharray: 2,1;*/
+}
+
+circle {
+  fill: #0984e3;
+}
+
+circle:hover {
+  fill: #74b9ff;
+}
+
+circle.lastMile {
+  fill: #079992;
+}
+
+circle.lastMile:hover {
+  fill: #38ada9;
+}
+
